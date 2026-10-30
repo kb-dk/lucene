@@ -842,8 +842,10 @@ class SolrWebService {
 
 		// If we have no filters at all then return an
 		// empty result set.
-		if (!isset($params['q'])) return [];
-
+        if (!isset($params['q'])) {
+            $totalResults = 0;
+            return [];
+        }
 		// Pagination.
 		$itemsPerPage = $searchRequest->getItemsPerPage();
 		$params['start'] = ($searchRequest->getPage() - 1) * $itemsPerPage;
