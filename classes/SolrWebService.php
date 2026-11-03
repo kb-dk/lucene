@@ -370,6 +370,36 @@ class SolrWebService {
 	}
 
 	/**
+	 * Create a text node with content that is safe for XML 1.0:
+	 * invalid UTF-8 is repaired and characters outside the XML
+	 * character range (e.g. control characters from copy/paste)
+	 * are removed. Otherwise DOMDocument::saveXML() fails with
+	 * "xmlEscapeEntities : char out of range".
+	 *
+	 * @param DOMDocument $doc
+	 * @param mixed $text
+	 * @return DOMText
+	 */
+	function _createTextNode(DOMDocument $doc, $text) {
+		$text = mb_scrub((string) $text, 'UTF-8');
+		$text = preg_replace('/[^\x{9}\x{A}\x{D}\x{20}-\x{D7FF}\x{E000}-\x{FFFD}\x{10000}-\x{10FFFF}]/u', '', $text) ?? '';
+		return $doc->createTextNode($text);
+	}
+
+	/**
+	 * Extract the display name of a controlled vocabulary entry.
+	 * OJS 3.5 returns entries as ['name' => ..., 'identifier' => ..., 'source' => ...],
+	 * older versions returned plain strings.
+	 *
+	 * @param string|array $vocab
+	 * @return string
+	 */
+	function _getVocabName($vocab) {
+		if (is_array($vocab)) return (string) ($vocab['name'] ?? '');
+		return (string) $vocab;
+	}
+
+	/**
 	 * Add the metadata XML of a single article to an
 	 * XML article list.
 	 *
@@ -405,7 +435,7 @@ class SolrWebService {
 			$authorList = $articleDoc->createElement('authorList');
 			foreach ($authors as $author) { /* @var $author Author */
 				$authorNode = $articleDoc->createElement('author');
-				$authorNode->appendChild($articleDoc->createTextNode($author->getFullName(true)));
+				$authorNode->appendChild($this->_createTextNode($articleDoc, $author->getFullName(true)));
 				$authorList->appendChild($authorNode);
 			}
 			$articleNode->appendChild($authorList);
@@ -430,7 +460,7 @@ class SolrWebService {
 			if (!is_null($localizedTitle)) {
 				// Add the localized title.
 				$titleNode = $articleDoc->createElement('title');
-				$titleNode->appendChild($articleDoc->createTextNode($localizedTitle));
+				$titleNode->appendChild($this->_createTextNode($articleDoc, $localizedTitle));
 				$titleNode->setAttribute('locale', $locale);
 
 				// If the title does not exist in the given locale
@@ -449,7 +479,7 @@ class SolrWebService {
 			$abstractList = $articleDoc->createElement('abstractList');
 			foreach ($abstracts as $locale => $abstract) {
 				$abstractNode = $articleDoc->createElement('abstract');
-				$abstractNode->appendChild($articleDoc->createTextNode($abstract));
+				$abstractNode->appendChild($this->_createTextNode($articleDoc, $abstract));
 				$abstractNode->setAttribute('locale', $locale);
 
 				$abstractList->appendChild($abstractNode);
@@ -474,7 +504,7 @@ class SolrWebService {
 				if (isset($disciplines[$locale])) {
 					foreach($disciplines[$locale] as $localizedDiscipline) {
 						$disciplineNode = $articleDoc->createElement('discipline');
-						$disciplineNode->appendChild($articleDoc->createTextNode($localizedDiscipline));
+						$disciplineNode->appendChild($this->_createTextNode($articleDoc, $this->_getVocabName($localizedDiscipline)));
 						$disciplineNode->setAttribute('locale', $locale);
 						$disciplineList->appendChild($disciplineNode);
 					}
@@ -511,18 +541,18 @@ class SolrWebService {
 				if (isset($subjects[$locale])) {
 					foreach($subjects[$locale] as $localizedSubject) {
 						if (!empty($subject)) $subject .= '; ';
-						$subject .= $localizedSubject;
+						$subject .= $this->_getVocabName($localizedSubject);
 					}
 				}
 				if (isset($keywords[$locale])) {
 					foreach($keywords[$locale] as $localizedKeyword) {
 						if (!empty($subject)) $subject .= '; ';
-						$subject .= $localizedKeyword;
+						$subject .= $this->_getVocabName($localizedKeyword);
 					}
 				}
 
 				$subjectNode = $articleDoc->createElement('subject');
-				$subjectNode->appendChild($articleDoc->createTextNode($subject));
+				$subjectNode->appendChild($this->_createTextNode($articleDoc, $subject));
 				$subjectNode->setAttribute('locale', $locale);
 				$subjectList->appendChild($subjectNode);
 
@@ -536,7 +566,7 @@ class SolrWebService {
 			$typeList = $articleDoc->createElement('typeList');
 			foreach ($types as $locale => $type) {
 				$typeNode = $articleDoc->createElement('type');
-				$typeNode->appendChild($articleDoc->createTextNode($type));
+				$typeNode->appendChild($this->_createTextNode($articleDoc, $type));
 				$typeNode->setAttribute('locale', $locale);
 				$typeList->appendChild($typeNode);
 			}
@@ -549,7 +579,7 @@ class SolrWebService {
 			$coverageList = $articleDoc->createElement('coverageList');
 			foreach($coverage as $locale => $coverageLocalized) {
 				$coverageNode = $articleDoc->createElement('coverage');
-				$coverageNode->appendChild($articleDoc->createTextNode($coverageLocalized));
+				$coverageNode->appendChild($this->_createTextNode($articleDoc, $coverageLocalized));
 				$coverageNode->setAttribute('locale', $locale);
 				$coverageList->appendChild($coverageNode);
 			}
@@ -573,7 +603,7 @@ class SolrWebService {
 			}
 
 			$journalTitleNode = $articleDoc->createElement('journalTitle');
-			$journalTitleNode->appendChild($articleDoc->createTextNode($journalTitle));
+			$journalTitleNode->appendChild($this->_createTextNode($articleDoc, $journalTitle));
 			$journalTitleNode->setAttribute('locale', $locale);
 			$journalTitleNode->setAttribute('sortOnly', $sortOnly ? 'true' : 'false');
 
@@ -587,7 +617,7 @@ class SolrWebService {
 			// Transform and store article publication date.
 			$publicationDate = $this->_convertDate($publicationDate);
 			$dateNode = $articleDoc->createElement('publicationDate');
-			$dateNode->appendChild($articleDoc->createTextNode($publicationDate));
+			$dateNode->appendChild($this->_createTextNode($articleDoc, $publicationDate));
 			$articleNode->appendChild($dateNode);
 		}
 
@@ -600,7 +630,7 @@ class SolrWebService {
 					// Transform and store issue publication date.
 					$issuePublicationDate = $this->_convertDate($issuePublicationDate);
 					$dateNode = $articleDoc->createElement('issuePublicationDate');
-					$dateNode->appendChild($articleDoc->createTextNode($issuePublicationDate));
+					$dateNode->appendChild($this->_createTextNode($articleDoc, $issuePublicationDate));
 					$articleNode->appendChild($dateNode);
 				}
 			}
